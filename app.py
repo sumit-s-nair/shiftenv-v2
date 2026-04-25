@@ -165,7 +165,7 @@ def quick_compile_test(rust_code: str) -> str:
 
 # ── Gradio UI ─────────────────────────────────────────────────────────────────
 
-with gr.Blocks(title="C2Rust — Compiler-as-Oracle RL Demo", theme=gr.themes.Soft()) as demo:
+with gr.Blocks(title="C2Rust — Compiler-as-Oracle RL Demo") as demo:
     gr.Markdown(
         """
         # C2Rust — Teaching LLMs to Migrate C to Safe Rust
@@ -203,8 +203,8 @@ with gr.Blocks(title="C2Rust — Compiler-as-Oracle RL Demo", theme=gr.themes.So
 
     with gr.Tab("⚡ Quick Compiler Test"):
         gr.Markdown("Paste any Rust code and check if it compiles + see its reward score.")
-        rust_input = gr.Code(language="rust", label="Rust code", lines=20,
-                             value='fn main() {\n    println!("Hello, Rust!");\n}')
+        rust_input = gr.Textbox(label="Rust code", lines=20,
+                               value='fn main() {\n    println!("Hello, Rust!");\n}')
         test_btn = gr.Button("Compile & Score", variant="secondary")
         test_out = gr.Textbox(label="Result", lines=8, interactive=False)
         test_btn.click(fn=quick_compile_test, inputs=[rust_input], outputs=[test_out])
@@ -244,4 +244,5 @@ if __name__ == "__main__":
     demo.launch(
         server_name=os.environ.get("GRADIO_SERVER_NAME", "0.0.0.0"),
         server_port=int(os.environ.get("GRADIO_SERVER_PORT", "7860")),
+        theme=gr.themes.Soft(),
     )
