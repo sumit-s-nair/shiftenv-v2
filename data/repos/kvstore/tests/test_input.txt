@@ -1,0 +1,9 @@
+put name Alice
+put age 30
+put city London
+get name
+get missing
+delete age
+get age
+list
+exit
