@@ -2,7 +2,7 @@ model:
   name: "Qwen/Qwen2.5-7B-Instruct"
   revision: ""                  # Optional: pin a commit/tag to avoid remote-code drift
   quantization: "4bit"           # QLoRA via Unsloth / bitsandbytes
-  max_tokens: 2048
+  max_tokens: 512
   temperature: 0.2
 
 training:
