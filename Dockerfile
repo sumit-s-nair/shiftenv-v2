@@ -26,7 +26,7 @@ WORKDIR /app
 # PyTorch with CUDA 12.4 — separate layer so it is cached independently
 RUN pip install --no-cache-dir \
     --index-url https://download.pytorch.org/whl/cu124 \
-    "torch==2.11.0"
+    "torch==2.6.0"
 
 # Training dependencies
 RUN pip install --no-cache-dir \
