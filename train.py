@@ -457,6 +457,34 @@ def _load_grpo_classes():
         ) from exc
 
 
+def _resolve_grpo_batch_shape(train_cfg: dict[str, Any]) -> tuple[int, int, int]:
+    """
+    Ensure TRL's global-batch-size divisibility constraint for GRPO.
+
+    Constraint: (per_device_train_batch_size * world_size) % num_generations == 0
+    """
+    requested_g = max(1, int(train_cfg.get("group_size", 4)))
+    per_device_bs = max(
+        1,
+        int(train_cfg.get("per_device_train_batch_size", requested_g)),
+    )
+    world_size = max(1, int(os.environ.get("WORLD_SIZE", "1")))
+    global_bs = per_device_bs * world_size
+
+    if global_bs % requested_g == 0:
+        return requested_g, per_device_bs, world_size
+
+    valid_g = [g for g in range(1, global_bs + 1) if global_bs % g == 0]
+    adjusted_g = max((g for g in valid_g if g <= requested_g), default=1)
+    log(
+        "WARNING: requested training.group_size="
+        f"{requested_g} is incompatible with global batch size {global_bs} "
+        f"(per_device_train_batch_size={per_device_bs}, world_size={world_size}). "
+        f"Using num_generations={adjusted_g}."
+    )
+    return adjusted_g, per_device_bs, world_size
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def train(config_path: str = "configs/config.yaml") -> None:
@@ -466,6 +494,11 @@ def train(config_path: str = "configs/config.yaml") -> None:
     env_cfg   = cfg["env"]
     reward_cfg = cfg["reward"]
     log_cfg   = cfg.get("logging", {})
+
+    requested_group_size = max(1, int(train_cfg.get("group_size", 4)))
+    num_generations, per_device_bs, world_size = _resolve_grpo_batch_shape(train_cfg)
+    global_bs = per_device_bs * world_size
+    grad_accum_steps = max(1, int(train_cfg.get("gradient_accumulation_steps", 4)))
 
     log_dir = Path("logs")
     log_dir.mkdir(exist_ok=True)
@@ -480,7 +513,12 @@ def train(config_path: str = "configs/config.yaml") -> None:
         log("WARNING: model.revision is unset — remote code may change between runs")
     log(f"quant:      {model_cfg.get('quantization', '4bit')}")
     log(f"lr:         {train_cfg.get('learning_rate', 1e-5):.2e}")
-    log(f"group size: {train_cfg.get('group_size', 4)}")
+    log(f"group size: {num_generations} (requested {requested_group_size})")
+    log(
+        "batch:      "
+        f"per_device={per_device_bs}, world_size={world_size}, global={global_bs}, "
+        f"grad_accum={grad_accum_steps}"
+    )
     log(f"max tokens: {model_cfg.get('max_tokens', 2048)}")
 
     # GPU info
@@ -531,10 +569,10 @@ def train(config_path: str = "configs/config.yaml") -> None:
     grpo_config = GRPOConfig(
         output_dir="checkpoints",
         num_train_epochs=n_epochs,
-        per_device_train_batch_size=1,
-        gradient_accumulation_steps=4,
+        per_device_train_batch_size=per_device_bs,
+        gradient_accumulation_steps=grad_accum_steps,
         learning_rate=train_cfg.get("learning_rate", 1e-5),
-        num_generations=train_cfg.get("group_size", 4),
+        num_generations=num_generations,
         max_completion_length=model_cfg.get("max_tokens", 2048),
         temperature=model_cfg.get("temperature", 0.2),
         logging_steps=log_every,
