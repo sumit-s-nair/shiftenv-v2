@@ -20,9 +20,17 @@ from tester.compiler import compile_and_evaluate
 
 # ── Agent (loaded once at startup) ───────────────────────────────────────────
 
+_AGENT: CodeWriter | None = None
+_AGENT_ERROR: str = ""
+
 print("Loading DeepSeek-Coder-V2-Lite-Instruct …")
-_AGENT = CodeWriter()
-print("Model ready.")
+try:
+    _AGENT = CodeWriter()
+    print("Model ready.")
+except RuntimeError as e:
+    _AGENT_ERROR = str(e)
+    print(f"WARNING: model not loaded — {_AGENT_ERROR}")
+    print("The compiler test tab will still work. Switch this Space to GPU hardware to enable generation.")
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -65,6 +73,15 @@ def run_repo_conversion(repo_name: str, max_retries: int) -> Generator:
     Generator yielding (c_panel, rust_panel, reward_html, status_html, log)
     after each module step — drives Gradio live updates.
     """
+    if _AGENT is None:
+        yield (
+            "", "", "",
+            f'<div style="color:#ef4444;font-weight:bold;">Model not loaded: {_AGENT_ERROR}</div>',
+            "❌ This Space needs GPU hardware to run the model.\n"
+            "Go to Space Settings → Hardware → upgrade to L40S or A100.",
+        )
+        return
+
     env = C2RustRepoEnv(repos_dir=REPOS_DIR, max_retries_per_module=max_retries)
     obs, info = env.reset(repo_name=repo_name)
 
@@ -88,7 +105,7 @@ def run_repo_conversion(repo_name: str, max_retries: int) -> Generator:
             "\n".join(log_lines),
         )
 
-        rust_code = _AGENT.generate(obs)
+        rust_code = _AGENT.generate(obs)  # type: ignore[union-attr]
         obs, reward, terminated, truncated, info = env.step({"rust_code": rust_code})
 
         if info["module_success"]:

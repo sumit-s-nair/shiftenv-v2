@@ -74,7 +74,7 @@ class CodeWriter:
                 self._model, self._tokenizer = FastLanguageModel.from_pretrained(
                     model_name=self.model_name,
                     max_seq_length=4096,
-                    dtype=None,          # auto-detect
+                    dtype=None,
                     load_in_4bit=load_4bit,
                 )
                 FastLanguageModel.for_inference(self._model)
@@ -86,8 +86,23 @@ class CodeWriter:
         # Plain HuggingFace transformers fallback
         try:
             from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-            import torch
+        except ImportError as e:
+            raise RuntimeError(
+                "transformers is not installed. Run: pip install transformers bitsandbytes"
+            ) from e
 
+        try:
+            import torch
+        except ImportError as e:
+            raise RuntimeError("torch is not installed. Run: pip install torch") from e
+
+        if not torch.cuda.is_available():
+            raise RuntimeError(
+                "No CUDA GPU detected. DeepSeek-Coder-V2-Lite (16B) requires a GPU "
+                "with at least 24 GB VRAM. This Space must be running on GPU hardware."
+            )
+
+        try:
             bnb_cfg = None
             if load_4bit:
                 bnb_cfg = BitsAndBytesConfig(
@@ -105,14 +120,14 @@ class CodeWriter:
                 quantization_config=bnb_cfg,
                 device_map="auto",
                 trust_remote_code=True,
-                torch_dtype="auto",
+                torch_dtype=torch.bfloat16,
             )
             self._model.eval()
             self._loaded = True
-        except ImportError as e:
+        except Exception as e:
             raise RuntimeError(
-                "Neither unsloth nor transformers is installed. "
-                "Run: pip install unsloth  OR  pip install transformers bitsandbytes"
+                f"Failed to load {self.model_name}: {e}\n"
+                "Check transformers version — DeepSeek-Coder-V2 requires transformers<4.46."
             ) from e
 
     # ── Prompt construction ──────────────────────────────────────────────────
