@@ -1,0 +1,39 @@
+model:
+  name: "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct"
+  quantization: "4bit"           # QLoRA via Unsloth
+  max_tokens: 2048
+  temperature: 0.2
+
+training:
+  max_episodes: 1000
+  max_retries_per_module: 5
+  learning_rate: 1.0e-5
+  algorithm: "GRPO"              # Group Relative Policy Optimization
+  lora_r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  group_size: 4                  # GRPO: generations per prompt
+  clip_epsilon: 0.2
+  kl_coeff: 0.1
+
+reward:
+  unsafe_penalty_per_block: -0.1
+  performance_bonus: 0.2
+  clippy_bonus: 0.1
+
+env:
+  data_dir: "data/c_programs"
+  temp_dir: "/tmp/c2rust"
+  timeout_seconds: 30
+  run_clippy: true
+
+compute:
+  hardware: "nvidia-l40s"        # 48GB VRAM on HF Spaces
+  budget_usd: 90
+  max_hours: 36
+  cost_per_hour: 1.80
+
+logging:
+  wandb_project: "c2rust-rl"
+  log_every_n_episodes: 10
+  save_checkpoint_every: 100

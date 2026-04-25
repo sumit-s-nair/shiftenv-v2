@@ -138,11 +138,12 @@ celerybeat.pid
 .env
 .envrc
 .venv
-env/
 venv/
 ENV/
 env.bak/
 venv.bak/
+# env/ is our Python package, not a virtualenv — don't ignore it
+
 
 # Spyder project settings
 .spyderproject

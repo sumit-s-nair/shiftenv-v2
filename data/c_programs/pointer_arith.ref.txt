@@ -1,0 +1,3 @@
+Sum: 39
+Max: 9
+Reversed: 4 7 2 9 1 8 3 5
