@@ -1,14 +1,18 @@
 """
 HuggingFace Spaces Gradio demo for C2Rust repo migration.
 
-Uses the fine-tuned (or base) DeepSeek-Coder-V2-Lite-Instruct model
-to convert a full multi-file C repository to safe Rust module-by-module,
-showing live compiler feedback and reward scores at each step.
+Tabs:
+  🚀 Training   — start/monitor GRPO training with live log streaming
+  🗂️ Repo Demo  — convert a full C repo module-by-module with the loaded model
+  ⚡ Compiler   — paste any Rust code and see the reward score instantly
+  ℹ️ About      — how it works
 """
 
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
 from pathlib import Path
 from typing import Generator
 
@@ -23,19 +27,78 @@ from tester.compiler import compile_and_evaluate
 _AGENT: CodeWriter | None = None
 _AGENT_ERROR: str = ""
 
-print("Loading DeepSeek-Coder-V2-Lite-Instruct …")
+print("Loading DeepSeek-Coder-V2-Lite-Instruct …", flush=True)
 try:
     _AGENT = CodeWriter()
-    print("Model ready.")
+    print("Model ready.", flush=True)
 except RuntimeError as e:
     _AGENT_ERROR = str(e)
-    print(f"WARNING: model not loaded — {_AGENT_ERROR}")
-    print("The compiler test tab will still work. Switch this Space to GPU hardware to enable generation.")
+    print(f"WARNING: model not loaded — {_AGENT_ERROR}", flush=True)
+    print("Compiler Test tab will still work. Set Space hardware to L40S for generation.", flush=True)
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 REPOS_DIR = "data/repos"
 AVAILABLE_REPOS = [d.name for d in Path(REPOS_DIR).iterdir() if d.is_dir()]
+
+# ── Training subprocess ───────────────────────────────────────────────────────
+
+_training_proc: subprocess.Popen | None = None
+
+
+def start_training(config_path: str) -> Generator[str, None, None]:
+    global _training_proc
+
+    if _training_proc is not None and _training_proc.poll() is None:
+        yield "⚠️  Training is already running. Wait for it to finish.\n"
+        return
+
+    wandb_key = os.environ.get("WANDB_API_KEY", "")
+    hf_token  = os.environ.get("HF_TOKEN", "")
+    hf_repo   = os.environ.get("HF_REPO_ID", "")
+
+    warnings = []
+    if not wandb_key:
+        warnings.append("WANDB_API_KEY not set — training will run without wandb logging.")
+    if not hf_token or not hf_repo:
+        warnings.append("HF_TOKEN / HF_REPO_ID not set — model will NOT be pushed to Hub after training.")
+    for w in warnings:
+        yield f"⚠️  {w}\n"
+
+    yield f"▶ Starting training: python train.py --config {config_path}\n\n"
+
+    env = os.environ.copy()
+    _training_proc = subprocess.Popen(
+        [sys.executable, "train.py", "--config", config_path],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+        env=env,
+    )
+
+    for line in _training_proc.stdout:
+        yield line
+
+    code = _training_proc.wait()
+    yield f"\n{'✅ Training complete' if code == 0 else f'❌ Training exited with code {code}'}.\n"
+
+
+def stop_training() -> str:
+    global _training_proc
+    if _training_proc is None or _training_proc.poll() is not None:
+        return "No training process is running."
+    _training_proc.terminate()
+    return "Training process terminated."
+
+
+def training_status() -> str:
+    if _training_proc is None:
+        return "Not started."
+    code = _training_proc.poll()
+    if code is None:
+        return "🟢 Running"
+    return f"{'✅ Finished' if code == 0 else '❌ Failed'} (exit code {code})"
 
 
 # ── Reward badge ──────────────────────────────────────────────────────────────
@@ -66,13 +129,9 @@ def _status_html(info: dict) -> str:
     return "<br>".join(lines)
 
 
-# ── Main conversion logic ─────────────────────────────────────────────────────
+# ── Repo conversion ───────────────────────────────────────────────────────────
 
 def run_repo_conversion(repo_name: str, max_retries: int) -> Generator:
-    """
-    Generator yielding (c_panel, rust_panel, reward_html, status_html, log)
-    after each module step — drives Gradio live updates.
-    """
     if _AGENT is None:
         yield (
             "", "", "",
@@ -165,6 +224,8 @@ def quick_compile_test(rust_code: str) -> str:
 
 # ── Gradio UI ─────────────────────────────────────────────────────────────────
 
+print("Building Gradio UI…", flush=True)
+
 with gr.Blocks(title="C2Rust — Compiler-as-Oracle RL Demo") as demo:
     gr.Markdown(
         """
@@ -172,11 +233,38 @@ with gr.Blocks(title="C2Rust — Compiler-as-Oracle RL Demo") as demo:
         **OpenEnv Hackathon India 2026 · Theme #2: Long-Horizon Planning**
 
         The Rust compiler (`rustc`) acts as the reward oracle — no human labels needed.
-        Watch DeepSeek-Coder-V2-Lite convert an entire C repository module-by-module.
         """
     )
 
-    with gr.Tab("🗂️ Repo Migration"):
+    # ── Training tab ─────────────────────────────────────────────────────────
+    with gr.Tab("🚀 Training"):
+        gr.Markdown(
+            "Run GRPO fine-tuning directly in this Space. Logs stream live below. "
+            "Make sure `WANDB_API_KEY`, `HF_TOKEN`, and `HF_REPO_ID` are set in Space secrets."
+        )
+        with gr.Row():
+            config_tb  = gr.Textbox(value="configs/config.yaml", label="Config path", scale=3)
+            status_tb  = gr.Textbox(value="Not started.", label="Status", interactive=False, scale=1)
+
+        with gr.Row():
+            train_btn = gr.Button("▶ Start Training", variant="primary")
+            stop_btn  = gr.Button("⏹ Stop", variant="stop")
+            refresh_btn = gr.Button("↻ Refresh status")
+
+        wandb_md = gr.Markdown(
+            f"**wandb project:** `c2rust-rl` — "
+            f"[open dashboard](https://wandb.ai/home) after training starts."
+        )
+        log_stream = gr.Textbox(label="Training log", lines=25, interactive=False,
+                                show_copy_button=True)
+
+        train_btn.click(fn=start_training, inputs=[config_tb], outputs=[log_stream])
+        stop_btn.click(fn=stop_training, outputs=[status_tb])
+        refresh_btn.click(fn=training_status, outputs=[status_tb])
+
+    # ── Repo demo tab ─────────────────────────────────────────────────────────
+    with gr.Tab("🗂️ Repo Demo"):
+        gr.Markdown("Convert a full C repository to safe Rust, module by module.")
         with gr.Row():
             repo_dd  = gr.Dropdown(AVAILABLE_REPOS,
                                    value=AVAILABLE_REPOS[0] if AVAILABLE_REPOS else None,
@@ -201,24 +289,26 @@ with gr.Blocks(title="C2Rust — Compiler-as-Oracle RL Demo") as demo:
             outputs=[c_panel, rust_panel, reward_html, status_html, log_box],
         )
 
-    with gr.Tab("⚡ Quick Compiler Test"):
-        gr.Markdown("Paste any Rust code and check if it compiles + see its reward score.")
+    # ── Compiler test tab ─────────────────────────────────────────────────────
+    with gr.Tab("⚡ Compiler Test"):
+        gr.Markdown("Paste any Rust code and see its reward score instantly. Works without GPU.")
         rust_input = gr.Textbox(label="Rust code", lines=20,
-                               value='fn main() {\n    println!("Hello, Rust!");\n}')
+                                value='fn main() {\n    println!("Hello, Rust!");\n}')
         test_btn = gr.Button("Compile & Score", variant="secondary")
         test_out = gr.Textbox(label="Result", lines=8, interactive=False)
         test_btn.click(fn=quick_compile_test, inputs=[rust_input], outputs=[test_out])
 
+    # ── About tab ─────────────────────────────────────────────────────────────
     with gr.Tab("ℹ️ About"):
         gr.Markdown(
             """
             ## How it works
 
             1. **Choose module** — C files ordered by `#include` dependencies (leaves first)
-            2. **Rewrite** — DeepSeek-Coder-V2-Lite-Instruct generates Rust
+            2. **Rewrite** — DeepSeek-Coder-V2-Lite-Instruct (16B, 4-bit QLoRA) generates Rust
             3. **Compile** — `cargo build --message-format=json` gives structured errors
             4. **Reward** — shaped signal from −1.0 (total failure) to +1.0 (perfect, no unsafe)
-            5. **Retry** — exact compiler errors are fed back into the prompt
+            5. **Retry** — exact compiler errors fed back into the prompt
 
             ## Reward table
 
@@ -233,12 +323,15 @@ with gr.Blocks(title="C2Rust — Compiler-as-Oracle RL Demo") as demo:
 
             Each `unsafe` block: additional **−0.1**.
 
-            ## Model
+            ## Model & Training
 
-            **DeepSeek-Coder-V2-Lite-Instruct** (16B MoE, ~2.4B active params)
-            loaded in 4-bit QLoRA via Unsloth. Fine-tuned with **GRPO** on an L40S (48 GB).
+            **DeepSeek-Coder-V2-Lite-Instruct** (16B MoE, ~2.4B active params per forward pass)
+            fine-tuned with **GRPO** (Group Relative Policy Optimization) via HuggingFace TRL + Unsloth.
+            Same RL algorithm DeepSeek used to train R1. Hardware: 1×L40S (48 GB VRAM).
             """
         )
+
+print("Launching Gradio on port 7860…", flush=True)
 
 if __name__ == "__main__":
     demo.launch(
