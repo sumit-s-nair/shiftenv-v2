@@ -1,24 +1,15 @@
 """
 LLM agent wrapper for C→Rust code generation.
 
-Loads DeepSeek-Coder-V2-Lite-Instruct in 4-bit QLoRA via Unsloth (when
-available) or plain HuggingFace transformers as a fallback.  Constructs
-error-conditioned prompts and returns raw Rust source strings.
+Loads Qwen2.5-7B-Instruct in 4-bit QLoRA via Unsloth (when available) or
+plain HuggingFace transformers as a fallback.  Constructs error-conditioned
+prompts and returns raw Rust source strings.
 """
 
 from __future__ import annotations
 
 import re
 from typing import Any, Optional
-
-# DeepSeek's bundled modeling_deepseek.py imports is_torch_fx_available which
-# was removed in transformers 4.46+. Patch it back before any model loading so
-# the import succeeds regardless of transformers version.
-try:
-    from transformers.utils.import_utils import is_torch_fx_available  # noqa: F401
-except ImportError:
-    import transformers.utils.import_utils as _tfu
-    _tfu.is_torch_fx_available = lambda: False
 
 
 _SYSTEM_PROMPT = """\
@@ -43,7 +34,7 @@ class CodeWriter:
     Parameters
     ----------
     model_name:
-        HuggingFace model ID.  Defaults to DeepSeek-Coder-V2-Lite-Instruct.
+        HuggingFace model ID.  Defaults to Qwen2.5-7B-Instruct.
     use_unsloth:
         If True (and unsloth is installed), load via FastLanguageModel for
         speed.  Falls back to plain transformers automatically.
@@ -57,7 +48,7 @@ class CodeWriter:
 
     def __init__(
         self,
-        model_name: str = "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct",
+        model_name: str = "Qwen/Qwen2.5-7B-Instruct",
         use_unsloth: bool = True,
         quantization: str = "4bit",
         max_new_tokens: int = 2048,
@@ -107,8 +98,8 @@ class CodeWriter:
 
         if not torch.cuda.is_available():
             raise RuntimeError(
-                "No CUDA GPU detected. DeepSeek-Coder-V2-Lite (16B) requires a GPU "
-                "with at least 24 GB VRAM. This Space must be running on GPU hardware."
+                "No CUDA GPU detected. Qwen2.5-7B-Instruct requires a GPU "
+                "with at least 8 GB VRAM (4-bit) or 16 GB VRAM (fp16)."
             )
 
         try:
@@ -134,10 +125,7 @@ class CodeWriter:
             self._model.eval()
             self._loaded = True
         except Exception as e:
-            raise RuntimeError(
-                f"Failed to load {self.model_name}: {e}\n"
-                "Check transformers version — DeepSeek-Coder-V2 requires transformers<4.46."
-            ) from e
+            raise RuntimeError(f"Failed to load {self.model_name}: {e}") from e
 
     # ── Prompt construction ──────────────────────────────────────────────────
 

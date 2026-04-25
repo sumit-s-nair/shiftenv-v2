@@ -298,26 +298,6 @@ def build_dataset(data_dirs: list[str]) -> "datasets.Dataset":
     return hf_datasets.Dataset.from_list(records)
 
 
-# ── DeepSeek forward compat ──────────────────────────────────────────────────
-
-def _patch_logits_to_keep(model) -> None:
-    """
-    TRL >= 0.14 passes logits_to_keep= to model.forward() as a memory
-    optimisation.  DeepSeek's custom forward() doesn't accept this kwarg.
-    We wrap forward to silently drop it — TRL's selective_log_softmax
-    handles token-position slicing itself, so returning full logits is
-    still numerically correct (only slightly less memory-efficient).
-    """
-    import functools
-    _orig = model.forward
-
-    @functools.wraps(_orig)
-    def _patched(*args, logits_to_keep=None, **kwargs):
-        return _orig(*args, **kwargs)
-
-    model.forward = _patched
-
-
 # ── Model loading ─────────────────────────────────────────────────────────────
 
 def _load_model(
@@ -353,21 +333,12 @@ def _load_model(
             use_gradient_checkpointing="unsloth",
             random_state=42,
         )
-        _patch_logits_to_keep(model)
         log("Unsloth model ready")
         return model, tokenizer
     except ImportError:
         pass
 
     log("Unsloth not found — falling back to HuggingFace transformers …")
-
-    # Patch is_torch_fx_available removed in transformers 4.46+ but still
-    # imported by DeepSeek's bundled modeling_deepseek.py.
-    try:
-        from transformers.utils.import_utils import is_torch_fx_available  # noqa: F401
-    except ImportError:
-        import transformers.utils.import_utils as _tfu
-        _tfu.is_torch_fx_available = lambda: False
 
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
     from peft import LoraConfig, get_peft_model, TaskType
@@ -408,7 +379,6 @@ def _load_model(
     )
     model = get_peft_model(model, lora_cfg)
     model.print_trainable_parameters()
-    _patch_logits_to_keep(model)
     log("HuggingFace model ready")
     return model, tokenizer
 

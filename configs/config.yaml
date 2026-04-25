@@ -1,7 +1,7 @@
 model:
-  name: "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct"
+  name: "Qwen/Qwen2.5-7B-Instruct"
   revision: ""                  # Optional: pin a commit/tag to avoid remote-code drift
-  quantization: "4bit"           # QLoRA via Unsloth
+  quantization: "4bit"           # QLoRA via Unsloth / bitsandbytes
   max_tokens: 2048
   temperature: 0.2
 
@@ -31,7 +31,7 @@ env:
   run_clippy: true
 
 compute:
-  hardware: "nvidia-l40s"        # 48GB VRAM on HF Spaces
+  hardware: "nvidia-l40s"        # 48GB VRAM; Qwen2.5-7B needs ~10 GB at 4-bit
   budget_usd: 90
   max_hours: 36
   cost_per_hour: 1.80
@@ -42,5 +42,5 @@ logging:
   save_checkpoint_every: 100
 
 hub:
-  repo_id: ""          # set to "YOUR_HF_USERNAME/c2rust-deepseek-coder-v2-lite"
+  repo_id: ""          # set to "YOUR_HF_USERNAME/c2rust-qwen2.5-7b"
   private: false       # set true to keep the model private until ready
