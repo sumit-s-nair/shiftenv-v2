@@ -35,7 +35,7 @@ RUN pip install --no-cache-dir \
     "trl>=0.15.0" \
     "peft==0.18.1" \
     "bitsandbytes==0.49.2" \
-    "datasets==4.8.4" \
+    "datasets>=3.4.1,<4.4.0" \
     "unsloth==2026.4.8" \
     "matplotlib>=3.8.0" \
     "pyyaml>=6.0" \

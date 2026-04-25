@@ -18,7 +18,7 @@ cuda-bindings==13.2.0
 cuda-pathfinder==1.5.3
 cuda-toolkit==13.0.2
 cycler==0.12.1
-datasets==4.8.4
+datasets>=3.4.1,<4.4.0
 deprecation==2.1.0
 dill==0.4.1
 enum-tools==0.13.0
