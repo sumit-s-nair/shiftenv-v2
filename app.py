@@ -255,8 +255,7 @@ with gr.Blocks(title="C2Rust — Compiler-as-Oracle RL Demo") as demo:
             f"**wandb project:** `c2rust-rl` — "
             f"[open dashboard](https://wandb.ai/home) after training starts."
         )
-        log_stream = gr.Textbox(label="Training log", lines=25, interactive=False,
-                                show_copy_button=True)
+        log_stream = gr.Textbox(label="Training log", lines=25, interactive=False)
 
         train_btn.click(fn=start_training, inputs=[config_tb], outputs=[log_stream])
         stop_btn.click(fn=stop_training, outputs=[status_tb])
