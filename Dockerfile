@@ -19,7 +19,7 @@ WORKDIR /app
 # modeling_deepseek.py still imports — we patch it back in code_writer.py.
 RUN pip install --no-cache-dir \
     "transformers>=4.46.0" \
-    "torch==2.3.1" \
+    "torch>=2.4.0" \
     "bitsandbytes>=0.43.0" \
     "accelerate>=0.30.0" \
     "peft>=0.11.0" \
