@@ -11,6 +11,15 @@ from __future__ import annotations
 import re
 from typing import Any, Optional
 
+# DeepSeek's bundled modeling_deepseek.py imports is_torch_fx_available which
+# was removed in transformers 4.46+. Patch it back before any model loading so
+# the import succeeds regardless of transformers version.
+try:
+    from transformers.utils.import_utils import is_torch_fx_available  # noqa: F401
+except ImportError:
+    import transformers.utils.import_utils as _tfu
+    _tfu.is_torch_fx_available = lambda: False
+
 
 _SYSTEM_PROMPT = """\
 You are an expert Rust programmer specialising in migrating C code to safe, idiomatic Rust.

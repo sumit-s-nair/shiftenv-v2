@@ -14,11 +14,11 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 
 WORKDIR /app
 
-# Python deps — pinned for DeepSeek-Coder-V2 compatibility.
-# transformers >=4.46 removed is_torch_fx_available which DeepSeek's custom
-# modeling_deepseek.py still imports, so we cap at 4.45.x.
+# Python deps.
+# transformers>=4.46 removed is_torch_fx_available which DeepSeek's bundled
+# modeling_deepseek.py still imports — we patch it back in code_writer.py.
 RUN pip install --no-cache-dir \
-    "transformers==4.45.2" \
+    "transformers>=4.46.0" \
     "torch==2.3.1" \
     "bitsandbytes>=0.43.0" \
     "accelerate>=0.30.0" \
