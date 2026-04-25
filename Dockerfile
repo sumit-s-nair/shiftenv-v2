@@ -25,7 +25,7 @@ RUN pip install --no-cache-dir \
     "accelerate==0.34.2" \
     "bitsandbytes==0.43.0" \
     "datasets==2.21.0" \
-    "gradio==4.36.0" \
+    "matplotlib>=3.8.0" \
     "pyyaml>=6.0" \
     "tree-sitter>=0.22.0" \
     "tree-sitter-c>=0.21.0" \
