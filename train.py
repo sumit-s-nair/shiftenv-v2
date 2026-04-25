@@ -60,6 +60,8 @@ class RewardTracker:
         self._unsafe_penalty = reward_cfg.get("unsafe_penalty_per_block", -0.1)
         self._clippy_bonus = reward_cfg.get("clippy_bonus", 0.1)
 
+        self.__name__ = "compile_and_reward"
+
         # Per-interval buffers (flushed by the callback on each log step)
         self._buf_rewards: list[float] = []
         self._buf_compiled: list[int] = []
