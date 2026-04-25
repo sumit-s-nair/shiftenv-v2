@@ -71,7 +71,7 @@ class RewardTracker:
         # Full history kept for graphing
         self.history: list[dict] = []
 
-    def __call__(self, prompts: list[str], completions: list[str]) -> list[float]:
+    def __call__(self, prompts: list[str], completions: list[str], **kwargs) -> list[float]:
         from agent.code_writer import _extract_rust
         rewards = []
         for raw in completions:

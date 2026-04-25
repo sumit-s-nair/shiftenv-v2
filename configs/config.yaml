@@ -12,7 +12,7 @@ training:
   algorithm: "GRPO"              # Group Relative Policy Optimization
   lora_r: 16
   lora_alpha: 32
-  lora_dropout: 0.05
+  lora_dropout: 0.0
   group_size: 4                  # GRPO: generations per prompt
   per_device_train_batch_size: 4 # global batch must be divisible by group_size
   gradient_accumulation_steps: 4
