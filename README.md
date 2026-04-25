@@ -62,7 +62,9 @@ Reward curve and before/after examples will be embedded here once the training r
 # 1. Clone and install (requires Rust toolchain)
 git clone https://github.com/YOUR_USERNAME/c2rust-rl
 cd c2rust-rl
-pip install unsloth trl datasets wandb pyyaml tree-sitter tree-sitter-c gradio
+pip install unsloth "trl>=0.14.0" "transformers>=4.46.0" \
+  "accelerate>=0.34.0" "datasets>=2.21.0" \
+  wandb pyyaml tree-sitter tree-sitter-c gradio
 
 # 2. Install Rust (if not already)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
@@ -81,6 +83,9 @@ HF_TOKEN=hf_xxx HF_REPO_ID=YOUR_USERNAME/c2rust-deepseek-coder-v2-lite \
 
 Edit `configs/config.yaml`:
 ```yaml
+model:
+  revision: ""  # optional but recommended: pin model snapshot commit/tag
+
 hub:
   repo_id: "YOUR_USERNAME/c2rust-deepseek-coder-v2-lite"
   private: false

@@ -1,5 +1,6 @@
 model:
   name: "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct"
+  revision: ""                  # Optional: pin a commit/tag to avoid remote-code drift
   quantization: "4bit"           # QLoRA via Unsloth
   max_tokens: 2048
   temperature: 0.2

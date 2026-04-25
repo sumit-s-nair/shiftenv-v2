@@ -300,7 +300,12 @@ def build_dataset(data_dirs: list[str]) -> "datasets.Dataset":
 
 # ── Model loading ─────────────────────────────────────────────────────────────
 
-def _load_model(model_name: str, load_4bit: bool, train_cfg: dict):
+def _load_model(
+    model_name: str,
+    load_4bit: bool,
+    train_cfg: dict,
+    model_revision: str | None = None,
+):
     lora_r       = train_cfg.get("lora_r", 16)
     lora_alpha   = train_cfg.get("lora_alpha", 32)
     lora_dropout = train_cfg.get("lora_dropout", 0.05)
@@ -308,12 +313,15 @@ def _load_model(model_name: str, load_4bit: bool, train_cfg: dict):
     try:
         from unsloth import FastLanguageModel
         log("loading model via Unsloth …")
-        model, tokenizer = FastLanguageModel.from_pretrained(
+        unsloth_kwargs = dict(
             model_name=model_name,
             max_seq_length=4096,
             dtype=None,
             load_in_4bit=load_4bit,
         )
+        if model_revision:
+            unsloth_kwargs["revision"] = model_revision
+        model, tokenizer = FastLanguageModel.from_pretrained(**unsloth_kwargs)
         model = FastLanguageModel.get_peft_model(
             model,
             r=lora_r,
@@ -351,16 +359,23 @@ def _load_model(model_name: str, load_4bit: bool, train_cfg: dict):
         bnb_4bit_compute_dtype=torch.bfloat16,
     ) if load_4bit else None
 
-    log(f"loading tokenizer …")
-    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-    log(f"loading model weights …")
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name,
+    tokenizer_kwargs = {"trust_remote_code": True}
+    if model_revision:
+        tokenizer_kwargs["revision"] = model_revision
+
+    model_kwargs = dict(
         quantization_config=bnb_cfg,
         device_map="auto",
         trust_remote_code=True,
         torch_dtype=torch.bfloat16,
     )
+    if model_revision:
+        model_kwargs["revision"] = model_revision
+
+    log(f"loading tokenizer …")
+    tokenizer = AutoTokenizer.from_pretrained(model_name, **tokenizer_kwargs)
+    log(f"loading model weights …")
+    model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
 
     lora_cfg = LoraConfig(
         task_type=TaskType.CAUSAL_LM,
@@ -416,6 +431,32 @@ def _patch_code_writer(repo_id: str) -> None:
         log(f"agent/code_writer.py default model → {repo_id}")
 
 
+def _load_grpo_classes():
+    try:
+        from trl import GRPOConfig, GRPOTrainer
+        return GRPOConfig, GRPOTrainer
+    except Exception:
+        pass
+
+    try:
+        from trl.trainer.grpo_config import GRPOConfig
+        from trl.trainer.grpo_trainer import GRPOTrainer
+        return GRPOConfig, GRPOTrainer
+    except Exception as exc:
+        trl_ver = "not installed"
+        try:
+            import trl
+            trl_ver = getattr(trl, "__version__", "unknown")
+        except Exception:
+            pass
+
+        raise ImportError(
+            "TRL GRPO APIs are unavailable. Install compatible versions: "
+            "trl>=0.14.0, transformers>=4.46.0, accelerate>=0.34.0, "
+            f"datasets>=2.21.0. Detected trl={trl_ver}."
+        ) from exc
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def train(config_path: str = "configs/config.yaml") -> None:
@@ -432,6 +473,11 @@ def train(config_path: str = "configs/config.yaml") -> None:
     banner("C2Rust  ·  GRPO Training")
     log(f"config:     {config_path}")
     log(f"model:      {model_cfg['name']}")
+    model_revision = model_cfg.get("revision")
+    if model_revision:
+        log(f"revision:   {model_revision}")
+    else:
+        log("WARNING: model.revision is unset — remote code may change between runs")
     log(f"quant:      {model_cfg.get('quantization', '4bit')}")
     log(f"lr:         {train_cfg.get('learning_rate', 1e-5):.2e}")
     log(f"group size: {train_cfg.get('group_size', 4)}")
@@ -460,7 +506,12 @@ def train(config_path: str = "configs/config.yaml") -> None:
         log(f"wandb skipped: {e}")
 
     load_4bit = model_cfg.get("quantization", "4bit") == "4bit"
-    model, tokenizer = _load_model(model_cfg["name"], load_4bit, train_cfg)
+    model, tokenizer = _load_model(
+        model_cfg["name"],
+        load_4bit,
+        train_cfg,
+        model_revision=model_revision,
+    )
 
     data_dirs = [env_cfg.get("data_dir", "data/c_programs"), "data/repos"]
     dataset = build_dataset(data_dirs)
@@ -469,7 +520,7 @@ def train(config_path: str = "configs/config.yaml") -> None:
     save_every = log_cfg.get("save_checkpoint_every", 100)
     graph_every = log_cfg.get("graph_every_n_steps", save_every)
 
-    from trl import GRPOConfig, GRPOTrainer
+    GRPOConfig, GRPOTrainer = _load_grpo_classes()
 
     tracker  = RewardTracker(env_cfg, reward_cfg)
     callback = _make_callback(tracker, log_dir, graph_every)
