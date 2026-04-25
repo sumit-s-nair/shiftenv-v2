@@ -23,7 +23,7 @@ RUN pip install --no-cache-dir \
     "bitsandbytes>=0.43.0" \
     "accelerate>=0.30.0" \
     "peft>=0.11.0" \
-    "trl>=0.9.4" \
+    "trl>=0.14.0" \
     "datasets>=2.20.0" \
     "gradio>=4.36.0" \
     "pyyaml>=6.0" \
