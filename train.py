@@ -134,7 +134,40 @@ def train(config_path: str = "configs/config.yaml") -> None:
 
     trainer.train()
     trainer.save_model("final_model")
+    tokenizer.save_pretrained("final_model")
     print("Training complete. Model saved to ./final_model")
+
+    _push_to_hub(model, tokenizer, cfg.get("hub", {}))
+
+
+def _push_to_hub(model, tokenizer, hub_cfg: dict) -> None:
+    repo_id = hub_cfg.get("repo_id") or os.environ.get("HF_REPO_ID", "")
+    token   = os.environ.get("HF_TOKEN", "")
+
+    if not repo_id:
+        print("Hub upload skipped — set hub.repo_id in config.yaml or HF_REPO_ID env var.")
+        return
+    if not token:
+        print("Hub upload skipped — HF_TOKEN environment variable not set.")
+        return
+
+    private = hub_cfg.get("private", False)
+    print(f"Uploading model to huggingface.co/{repo_id} …")
+    try:
+        model.push_to_hub(repo_id, token=token, private=private)
+        tokenizer.push_to_hub(repo_id, token=token, private=private)
+        print(f"Model pushed to https://huggingface.co/{repo_id}")
+
+        # Update agent/code_writer.py default to point at the uploaded model
+        _patch_code_writer(repo_id)
+
+        try:
+            import wandb
+            wandb.log({"hub_repo": repo_id})
+        except Exception:
+            pass
+    except Exception as exc:
+        print(f"Hub upload failed: {exc}")
 
 
 def _load_model(model_name: str, load_4bit: bool, train_cfg: dict):
@@ -199,6 +232,24 @@ def _load_model(model_name: str, load_4bit: bool, train_cfg: dict):
     model = get_peft_model(model, lora_cfg)
     model.print_trainable_parameters()
     return model, tokenizer
+
+
+def _patch_code_writer(repo_id: str) -> None:
+    """Rewrite the default model_name in agent/code_writer.py to the Hub repo."""
+    path = Path("agent/code_writer.py")
+    if not path.exists():
+        return
+    text = path.read_text(encoding="utf-8")
+    import re
+    updated = re.sub(
+        r'model_name: str = "[^"]+"',
+        f'model_name: str = "{repo_id}"',
+        text,
+        count=1,
+    )
+    if updated != text:
+        path.write_text(updated, encoding="utf-8")
+        print(f"agent/code_writer.py default model updated to {repo_id}")
 
 
 if __name__ == "__main__":
