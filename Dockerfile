@@ -16,27 +16,25 @@ WORKDIR /app
 
 # Python deps.
 # transformers>=4.46 removed is_torch_fx_available which DeepSeek's bundled
-# modeling_deepseek.py still imports — we patch it back in code_writer.py.
+# modeling_deepseek.py still imports — we patch it back in agent/code_writer.py.
 RUN pip install --no-cache-dir \
-    "torch==2.4.0" \
-    "transformers==4.45.2" \
-    "trl==0.9.4" \
-    "peft==0.11.0" \
-    "accelerate==0.30.0" \
-    "bitsandbytes==0.43.0" \
-    "datasets==2.20.0" \
-    "gradio==4.36.0" \
+    "transformers>=4.46.0" \
+    "torch==2.3.1" \
+    "bitsandbytes>=0.43.0" \
+    "accelerate>=0.30.0" \
+    "peft>=0.11.0" \
+    "trl>=0.14.0" \
+    "datasets>=2.20.0" \
+    "matplotlib>=3.8.0" \
     "pyyaml>=6.0" \
     "tree-sitter>=0.22.0" \
     "tree-sitter-c>=0.21.0" \
-    "wandb"
+    "wandb>=0.17.0"
 
 # Application code
 COPY . .
 
-# HuggingFace Spaces expects port 7860
-ENV GRADIO_SERVER_NAME="0.0.0.0"
-ENV GRADIO_SERVER_PORT="7860"
-EXPOSE 7860
+# Unbuffered output so logs appear immediately in the Space log panel
+ENV PYTHONUNBUFFERED=1
 
-CMD ["python", "-u", "app.py"]
+CMD ["python", "-u", "train.py", "--config", "configs/config.yaml"]
