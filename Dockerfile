@@ -37,4 +37,4 @@ EXPOSE 7860
 ENV PYTHONUNBUFFERED=1
 
 # 5. Boot Training (with WandB logging enabled)
-CMD ["python", "-u", "main.py", "--engine", "local", "--wandb"]
+CMD uvicorn health_check:app --host 0.0.0.0 --port 7860 & python -u main.py --engine local --wandb
