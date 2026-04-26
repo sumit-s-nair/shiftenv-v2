@@ -217,19 +217,10 @@ def compile_and_evaluate(
         # ── Test binary ──────────────────────────────────────────────────────
         test_passed: Optional[bool] = None
         binary_path_out: Optional[str] = None
-        if success and os.path.exists(bin_path):
-            # Copy binary out of tmpdir so caller can inspect if needed
-            import shutil
-            persistent_dir = tempfile.mkdtemp(prefix="c2rust_bin_")
-            persistent_bin = os.path.join(persistent_dir, "main")
-            shutil.copy2(bin_path, persistent_bin)
-            os.chmod(persistent_bin, 0o755)
-            binary_path_out = persistent_bin
-
-            if reference_output is not None:
-                actual = _run_binary(persistent_bin, timeout=10)
-                if actual is not None:
-                    test_passed = actual.strip() == reference_output.strip()
+        if success and os.path.exists(bin_path) and reference_output is not None:
+            actual = _run_binary(bin_path, timeout=10)
+            if actual is not None:
+                test_passed = actual.strip() == reference_output.strip()
 
         # ── Clippy ───────────────────────────────────────────────────────────
         clippy_clean: Optional[bool] = None

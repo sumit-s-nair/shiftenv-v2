@@ -12,12 +12,18 @@ import argparse
 import os
 import re
 import time
+import warnings
 from collections import Counter
 from pathlib import Path
 from statistics import mean, stdev
 from typing import Any
 
 import yaml
+
+# Suppress noisy deprecation warnings from transformers / Unsloth internals
+warnings.filterwarnings("ignore", category=FutureWarning, module="transformers")
+warnings.filterwarnings("ignore", category=UserWarning, message=".*max_new_tokens.*max_length.*")
+warnings.filterwarnings("ignore", category=UserWarning, message=".*use_return_dict.*")
 
 
 # ── Config ────────────────────────────────────────────────────────────────────
