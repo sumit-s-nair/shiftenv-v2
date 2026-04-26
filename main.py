@@ -208,35 +208,4 @@ def main() -> None:
     print(f"Total epochs processed: {epoch}")
 
 if __name__ == "__main__":
-    import os
-    hf_repo = "sumit-s-nair/c2rust-qwen-adapter"
-    hf_token = os.environ.get("HF_TOKEN")
-    adapter_dir = os.environ.get("ADAPTER_DIR", "lora_adapters")
-    
-    # --- HUB UPLOAD SHORT-CIRCUIT ---
-    # Since training is done, when HF Spaces restarts, we just want to upload the 
-    # persistent /data/lora_adapters directory to the Hub and exit, preventing a restart.
-    if hf_token and os.path.exists(adapter_dir):
-        print(f"Found trained adapter at {adapter_dir}. Uploading to Hugging Face Hub → {hf_repo}")
-        try:
-            from huggingface_hub import HfApi
-            api = HfApi(token=hf_token)
-            api.create_repo(repo_id=hf_repo, exist_ok=True)
-            api.upload_folder(
-                folder_path=adapter_dir,
-                repo_id=hf_repo,
-                commit_message="Upload trained C2Rust adapter"
-            )
-            print("✅ Successfully uploaded adapter to Hugging Face Hub!")
-        except ImportError:
-            print("huggingface_hub not installed. Proceeding...")
-        except Exception as e:
-            print(f"❌ Error uploading to Hub: {e}")
-        
-        # Exit so it doesn't restart the migration loop from file 1
-        import sys
-        print("Exiting to prevent training loop from restarting.")
-        sys.exit(0)
-    # --------------------------------
-    
     main()
