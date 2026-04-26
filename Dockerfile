@@ -20,9 +20,9 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 
 WORKDIR /app
 
-# 3. Python dependencies for the env server (no torch/GPU needed for reward oracle)
-COPY requirements-env.txt .
-RUN pip install --no-cache-dir -r requirements-env.txt
+# 3. Python dependencies for the training loop (includes torch, transformers, etc.)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 # 4. Copy codebase
 COPY . .
