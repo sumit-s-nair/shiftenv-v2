@@ -126,6 +126,9 @@ def main() -> None:
         os.path.join("medium", "folder_1"),
         os.path.join("medium", "folder_2"),
         os.path.join("medium", "folder_3"),
+        os.path.join("complex", "folder_1"),
+        os.path.join("complex", "folder_2"),
+        os.path.join("complex", "folder_3")
     ]
 
     epoch = 0
