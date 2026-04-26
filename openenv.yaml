@@ -1,10 +1,28 @@
 name: c2rust-migration-env
 version: "2.0.0"
+spec_version: 1
 description: >
-  An RL environment for training LLM agents to migrate C code to safe Rust.
-  Uses the Rust compiler (rustc/cargo) as a reward oracle. 
+  An RL environment for training LLM agents to migrate C code to safe, idiomatic Rust.
+  Uses the Rust compiler (cargo check) as a reward oracle — no human labels required.
+  Theme: Long-Horizon Planning (OpenEnv Hackathon India 2026).
 theme: long-horizon-planning
-entry_point: env.c2rust_env:C2RustEnv
+entry_point: env.server.app:app
 observation_space: dict
 action_space: text
 reward_range: [0.0, 1.0]
+tools:
+  - name: translate_c_file
+    description: >
+      Evaluate a Rust translation of a C module.
+      Returns JSON with reward (float), compile_success (bool),
+      unsafe_count, warning_count, error_count, and compiler_errors.
+    parameters:
+      rust_code: string
+      module_name: string
+  - name: score_rust_code
+    description: >
+      Quickly score any Rust code snippet using the compiler reward function.
+      Returns a scalar reward in [0.0, 1.0].
+    parameters:
+      rust_code: string
+      module_name: string

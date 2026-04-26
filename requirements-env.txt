@@ -1,0 +1,16 @@
+# C2Rust RL Environment Server Dependencies
+# Lightweight — no GPU, no torch. Just the reward oracle + OpenEnv server.
+
+# OpenEnv framework
+openenv-core>=0.1.0
+fastmcp>=2.0.0
+
+# FastAPI server
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+
+# Static analysis (reward.py uses subprocess for cargo check — no libclang needed at runtime)
+# libclang is only needed for analyzer.py (offline analysis, run separately)
+
+# Utilities
+python-dotenv>=1.0.0
