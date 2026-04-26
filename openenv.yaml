@@ -1,0 +1,10 @@
+name: c2rust-migration-env
+version: "2.0.0"
+description: >
+  An RL environment for training LLM agents to migrate C code to safe Rust.
+  Uses the Rust compiler (rustc/cargo) as a reward oracle. 
+theme: long-horizon-planning
+entry_point: env.c2rust_env:C2RustEnv
+observation_space: dict
+action_space: text
+reward_range: [0.0, 1.0]
