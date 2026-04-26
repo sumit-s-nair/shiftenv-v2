@@ -560,6 +560,9 @@ def train(config_path: str = "configs/config.yaml") -> None:
     n_epochs = max(1, train_cfg.get("max_episodes", 1000) // max(len(dataset), 1))
     log(f"epochs:     {n_epochs}  (={len(dataset)} samples × {n_epochs} passes)")
 
+    max_completion = model_cfg.get("max_tokens", 512)
+    max_prompt     = model_cfg.get("max_prompt_tokens", 512)
+
     grpo_config = GRPOConfig(
         output_dir="checkpoints",
         num_train_epochs=n_epochs,
@@ -567,7 +570,8 @@ def train(config_path: str = "configs/config.yaml") -> None:
         gradient_accumulation_steps=grad_accum_steps,
         learning_rate=train_cfg.get("learning_rate", 1e-5),
         num_generations=num_generations,
-        max_completion_length=model_cfg.get("max_tokens", 2048),
+        max_prompt_length=max_prompt,
+        max_completion_length=max_completion,
         temperature=model_cfg.get("temperature", 0.2),
         logging_steps=log_every,
         save_steps=save_every,

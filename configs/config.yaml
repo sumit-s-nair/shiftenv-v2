@@ -2,7 +2,8 @@ model:
   name: "Qwen/Qwen2.5-7B-Instruct"
   revision: ""                  # Optional: pin a commit/tag to avoid remote-code drift
   quantization: "4bit"           # QLoRA via Unsloth / bitsandbytes
-  max_tokens: 512
+  max_tokens: 512        # max completion tokens (generated Rust)
+  max_prompt_tokens: 512 # max prompt tokens (C source); caps the 32K TRL default
   temperature: 0.2
 
 training:
