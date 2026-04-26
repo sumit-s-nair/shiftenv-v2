@@ -13,10 +13,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && ln -sf python3.11 /usr/bin/python \
     && python --version
 
-# 2. Rust compiler (stable) — required for reward.py's cargo check calls
+# 2. Rust compiler (stable) — installed to /usr/local for cross-user access
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:$PATH
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-        | sh -s -- -y --default-toolchain stable --profile minimal
-ENV PATH="/root/.cargo/bin:${PATH}"
+        | sh -s -- -y --default-toolchain stable --profile minimal --no-modify-path && \
+    chmod -R a+w $RUSTUP_HOME $CARGO_HOME
 
 WORKDIR /app
 
@@ -27,8 +30,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 4. Copy codebase
 COPY . .
 
-# 5. Create non-root user for HF Spaces
-RUN useradd -m -u 1000 user
+# 5. Create non-root user for HF Spaces and set permissions
+RUN useradd -m -u 1000 user && \
+    chown -R user:user /app
 USER user
 
 EXPOSE 7860
