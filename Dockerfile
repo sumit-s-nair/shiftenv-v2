@@ -33,5 +33,5 @@ USER user
 
 EXPOSE 7860
 
-# Boot: run the OpenEnv FastAPI server (reward oracle, no GPU needed)
-CMD ["uvicorn", "env.server.app:app", "--host", "0.0.0.0", "--port", "7860"]
+# Boot: run the actual training loop (engine local + wandb)
+CMD ["python3", "main.py", "--engine", "local", "--wandb"]

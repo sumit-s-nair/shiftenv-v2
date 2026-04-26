@@ -198,6 +198,11 @@ def main() -> None:
         print(f"{'='*60}")
         _cleanup_epoch(args.migrator_data, args.output, args.state)
 
+        # Save and upload checkpoint for the epoch (Local engine only)
+        if args.engine == "local":
+            import C2RustLocal
+            C2RustLocal.save_epoch_checkpoint(epoch)
+
     generate_cargo(args.output, package_name)
 
     if args.engine == "local":
