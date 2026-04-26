@@ -27,12 +27,23 @@ edition = "2021"
 
 # Per-error penalty used for partial credit when compilation fails.
 # 8+ errors → score floors at 0.
-_ERROR_PENALTY = 0.12
+_ERROR_PENALTY  = 0.12
 
-# Per-unit penalties applied after the compilation score.
-_WARN_PENALTY   = 0.05   # per warning  (capped at 5)
-_UNSAFE_PENALTY = 0.10   # per unsafe{} (capped at 3)
-_UNWRAP_PENALTY = 0.02   # per .unwrap/.expect (capped at 5)
+# Fix 2 — penalties no longer capped so each extra issue genuinely hurts.
+# This widens the reward distribution so samples that all compile can still
+# get meaningfully different scores, giving GRPO a real training signal.
+_WARN_PENALTY   = 0.04   # per warning, uncapped  (was 0.05, capped at 5)
+_UNSAFE_PENALTY = 0.08   # per unsafe{}           (was 0.10, capped at 3)
+_UNWRAP_PENALTY = 0.02   # per .unwrap/.expect     (was 0.02, capped at 5)
+
+# Penalise C-isms that survived translation (non-idiomatic Rust patterns).
+_CISM_PENALTY   = 0.05   # per detected C-ism (capped at 4 occurrences)
+
+# Bonus for using idiomatic Rust patterns — rewards improvement beyond "just compiles".
+_RESULT_BONUS   = 0.04   # per Result<...> return type in fn signatures
+_OPTION_BONUS   = 0.03   # per Option<...> in signatures
+_ITER_BONUS     = 0.02   # per iterator combinator (.map/.filter/.collect etc.)
+_MAX_IDIOM_BONUS = 0.15  # cap so bonus can’t push score above 1.0 easily
 
 
 @dataclass
@@ -128,10 +139,10 @@ def compute_reward(
 ) -> tuple[float, RewardInfo]:
     """Evaluate generated Rust code and return (reward ∈ [0,1], info).
 
-    Args:
-        rust_code:   Generated Rust source to evaluate.
-        module_name: Module name (used for context in future extensions).
-        timeout:     Seconds before cargo check is killed.
+    Fix 2 changes vs original:
+    - Penalties are uncapped — extra warnings/unsafe truly hurt.
+    - C-ism detection penalises patterns typical of naive C→Rust translation.
+    - Idiomatic Rust bonuses reward use of Result/Option/iterators.
     """
     info = RewardInfo()
 
@@ -142,28 +153,57 @@ def compute_reward(
     info.unsafe_count = len(re.findall(r"\bunsafe\s*\{", rust_code))
     info.unwrap_count = len(re.findall(r"\.(unwrap|expect)\s*\(", rust_code))
 
+    # C-ism detection: patterns that suggest a direct C port rather than idiomatic Rust.
+    cism_patterns = [
+        r"\bprintf\s*\(",           # raw printf surviving in output
+        r"\bputs\s*\(",
+        r"\bscanf\s*\(",
+        r"\bmalloc\s*\(",           # manual allocation (should use Vec/Box)
+        r"\bfree\s*\(",
+        r"\*mut\s+\w+",              # raw *mut pointer
+        r"\*const\s+\w+",            # raw *const pointer
+        r"\bstd::mem::transmute",    # unsafe bit-cast leftover
+    ]
+    cism_count = sum(
+        len(re.findall(pat, rust_code)) for pat in cism_patterns
+    )
+
+    # Idiomatic Rust bonuses.
+    result_uses = len(re.findall(r"\bResult\s*<", rust_code))
+    option_uses = len(re.findall(r"\bOption\s*<", rust_code))
+    iter_uses   = len(re.findall(
+        r"\.(?:map|filter|collect|flat_map|fold|enumerate|zip|chain|take|skip)\s*\(",
+        rust_code,
+    ))
+    idiom_bonus = min(
+        _MAX_IDIOM_BONUS,
+        result_uses * _RESULT_BONUS
+        + option_uses * _OPTION_BONUS
+        + iter_uses   * _ITER_BONUS,
+    )
+
     # --- Compilation check ---
     with tempfile.TemporaryDirectory() as tmpdir:
         _write_project(tmpdir, rust_code)
         success, stderr = _run_cargo_check(tmpdir, timeout)
 
     if success is None:
-        # Compiler unavailable — give neutral score so static penalties still apply.
         info.compilation_score = 0.5
     elif success:
         info.compilation_score = 1.0
         _, info.warning_count, _ = _parse_diagnostics(stderr)
     else:
         info.error_count, info.warning_count, info.errors = _parse_diagnostics(stderr)
-        # Partial credit: each additional error subtracts _ERROR_PENALTY, floor 0.
         info.compilation_score = max(0.0, 1.0 - info.error_count * _ERROR_PENALTY)
 
-    # --- Aggregate ---
+    # --- Aggregate (Fix 2: uncapped penalties + C-ism + idiom) ---
     raw = (
         info.compilation_score
-        - _WARN_PENALTY   * min(info.warning_count, 5)
-        - _UNSAFE_PENALTY * min(info.unsafe_count,  3)
-        - _UNWRAP_PENALTY * min(info.unwrap_count,   5)
+        - _WARN_PENALTY   * info.warning_count          # uncapped
+        - _UNSAFE_PENALTY * info.unsafe_count            # uncapped
+        - _UNWRAP_PENALTY * info.unwrap_count            # uncapped
+        - _CISM_PENALTY   * min(cism_count, 4)           # capped at 4
+        + idiom_bonus                                     # bonus for good Rust
     )
     info.total = max(0.0, min(1.0, raw))
     return info.total, info

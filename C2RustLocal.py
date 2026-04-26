@@ -60,6 +60,14 @@ _SAVE_EVERY         = 5        # save adapter + checkpoint every N steps
 _ADV_EPS            = 1e-8
 _CHECKPOINT_FILE    = "training_checkpoint.json"  # sidecar saved next to adapter dir
 
+# Fix 1 — generation diversity
+GEN_TEMPERATURE     = 1.2      # higher → more diverse rollouts → non-zero advantage signal
+GEN_TOP_P           = 0.95
+
+# Fix 3 — cheap KL penalty via L2 on LoRA params (which start at 0 = base model)
+# Equivalent to a Gaussian prior over LoRA deltas; prevents policy from drifting too far.
+KL_BETA             = 5e-4    # scale relative to policy loss (~0–2)
+
 
 # ---------------------------------------------------------------------------
 # STATE
@@ -318,8 +326,8 @@ def _generate(tokenizer, model, prompt: str, n: int):
             **inputs,
             max_new_tokens=MAX_NEW_TOKENS,
             do_sample=True,
-            temperature=0.8,
-            top_p=0.9,
+            temperature=GEN_TEMPERATURE,  # Fix 1: 1.2 for diverse rollouts
+            top_p=GEN_TOP_P,
             pad_token_id=tokenizer.eos_token_id,
             num_return_sequences=n,
         )
@@ -347,6 +355,12 @@ def _grpo_step(model, optimizer, inputs, resp_ids, rewards):
 
     log(f"GRPO step | mean={mean_r:.4f} std={std_r:.4f}")
 
+    # Skip update if all rewards identical — no gradient signal available.
+    # (Previously this silently ran with loss=0 wasting 3–4 seconds.)
+    if std_r <= _ADV_EPS * 2:
+        log("GRPO step skipped — zero reward variance (all samples identical)")
+        return 0.0
+
     prompt_len = inputs["input_ids"].shape[1]
     loss_terms = []
 
@@ -364,11 +378,21 @@ def _grpo_step(model, optimizer, inputs, resp_ids, rewards):
 
         log(f"  sample {i} loss={out.loss.item():.4f}")
 
-        # FIXED: Removed the negative sign to correctly minimize the negated policy gradient
         loss_terms.append((adv.to(model.device)) * out.loss)
 
     if loss_terms:
-        loss = torch.stack(loss_terms).mean()
+        policy_loss = torch.stack(loss_terms).mean()
+
+        # Fix 3 — KL proxy: L2 regularisation on LoRA params.
+        # LoRA deltas are initialised to 0 (= base model), so penalising their
+        # L2 norm approximates a KL penalty against the reference model without
+        # loading a second 7B copy into VRAM.
+        lora_l2 = sum(
+            p.pow(2).sum()
+            for p in model.parameters()
+            if p.requires_grad
+        )
+        loss = policy_loss + KL_BETA * lora_l2
 
         optimizer.zero_grad()
         loss.backward()
@@ -376,7 +400,8 @@ def _grpo_step(model, optimizer, inputs, resp_ids, rewards):
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         optimizer.step()
 
-        log(f"GRPO update complete | loss={loss.item():.4f}")
+        log(f"GRPO update complete | policy_loss={policy_loss.item():.4f} "
+            f"kl_proxy={lora_l2.item():.4f} total_loss={loss.item():.4f}")
 
         return loss.item()
 
