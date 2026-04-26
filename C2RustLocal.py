@@ -223,6 +223,21 @@ def _save_checkpoint(model, tokenizer):
 
     log(f"Checkpoint saved → {adapter_dir} (step={_state['step']})")
 
+    # Auto-push to Hugging Face Hub periodically if token is available
+    hf_repo = "sumit-s-nair/c2rust-qwen-adapter"
+    hf_token = os.environ.get("HF_TOKEN")
+    if hf_token and hasattr(model, "push_to_hub"):
+        try:
+            # Push every 20 steps (since _SAVE_EVERY is 5, this runs on step 20, 40, etc.)
+            if _state.get("step", 0) > 0 and _state.get("step", 0) % 20 == 0:
+                log(f"Auto-saving to Hugging Face Hub → {hf_repo} ...")
+                model.push_to_hub(hf_repo, token=hf_token, safe_serialization=True)
+                if hasattr(tokenizer, "push_to_hub"):
+                    tokenizer.push_to_hub(hf_repo, token=hf_token)
+                log("Hub auto-push complete.")
+        except Exception as e:
+            log(f"WARNING: Failed to auto-push to hub: {e}")
+
 
 def _load_checkpoint():
     """Restore step/history from a previous checkpoint if one exists."""
@@ -578,6 +593,21 @@ def generate_submission_report(output_dir: str):
     with open(md_path, "w", encoding="utf-8") as f:
         f.write("# C2Rust RL Training Summary\n\n")
         f.write(f"**Total Modules Processed:** {len(df)}\n")
+
+    # Final Hub Push
+    hf_repo = "sumit-s-nair/c2rust-qwen-adapter"
+    hf_token = os.environ.get("HF_TOKEN")
+    model = _state.get("model")
+    tokenizer = _state.get("tokenizer")
+    if hf_token and model is not None and hasattr(model, "push_to_hub"):
+        log(f"Finalizing: Pushing model to Hugging Face Hub → {hf_repo} ...")
+        try:
+            model.push_to_hub(hf_repo, token=hf_token, safe_serialization=True)
+            if tokenizer and hasattr(tokenizer, "push_to_hub"):
+                tokenizer.push_to_hub(hf_repo, token=hf_token)
+            log("Final Hub push complete.")
+        except Exception as e:
+            log(f"WARNING: Final push to hub failed: {e}")
         f.write(f"**Final Mean Reward:** {final_mean_reward:.3f}\n")
         f.write(f"**Total Successful Compiles:** {success_count} / {len(df)}\n\n")
         f.write("![Training Curves](training_curves.png)\n\n")
