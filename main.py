@@ -116,6 +116,11 @@ def main() -> None:
         sleep(0.5)
 
     generate_cargo(args.output, package_name)
+
+    if args.engine == "local":
+        print("\nGenerating submission graphs and markdown report...")
+        C2RustLocal.generate_submission_report(args.output)
+
     print("\nMigration finished.")
 
 

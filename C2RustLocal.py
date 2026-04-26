@@ -1,10 +1,14 @@
 import argparse
+import html
+import json
 import os
 import re
 import statistics
 import time
 from typing import Optional
 
+import matplotlib.pyplot as plt
+import pandas as pd
 import torch
 from datasets import Dataset
 from peft import LoraConfig, PeftModel, get_peft_model, prepare_model_for_kbit_training
@@ -71,6 +75,7 @@ _state = {
     "lr": 2e-5,
     "step": 0,
     "files_processed": 0,
+    "history": [],
     "tokenizer": None,
     "model": None,
     "optimizer": None,
@@ -102,6 +107,7 @@ def configure(online_training=True, debug=False,
         lr=lr,
         step=0,
         files_processed=0,
+        history=[],
         tokenizer=None,
         model=None,
         optimizer=None,
@@ -358,6 +364,7 @@ def convert_c_to_rust(file_path: str, output_path: str) -> str:
     rust = remove_self_import(rust, module_name)
     best_info = reward_infos[best]
     best_success = int(best_info.error_count == 0 and best_info.compilation_score >= 1.0)
+    best_unsafe = int(best_info.unsafe_count)
     loss_val = 0.0
 
     if _state["online_training"] and not _state["debug"]:
@@ -371,23 +378,43 @@ def convert_c_to_rust(file_path: str, output_path: str) -> str:
     elif _state["online_training"] and _state["debug"]:
         log("Debug mode is enabled; skipping GRPO parameter update.")
 
+    mean_reward = float(sum(rewards) / len(rewards))
+    max_reward = float(rewards[best])
+    _state["history"].append(
+        {
+            "step": int(_state["step"]),
+            "module": module_name,
+            "loss": float(loss_val),
+            "mean_reward": mean_reward,
+            "max_reward": max_reward,
+            "compile_success": int(best_success),
+            "unsafe_count": best_unsafe,
+        }
+    )
+
     _state["files_processed"] += 1
     if _state["use_wandb"] and wandb is not None and wandb.run is not None:
-        wandb.log(
-            {
-                "reward": float(rewards[best]),
-                "reward_mean": float(sum(rewards) / len(rewards)),
-                "compile_success": best_success,
-                "unsafe_count": int(best_info.unsafe_count),
-                "warning_count": int(best_info.warning_count),
-                "error_count": int(best_info.error_count),
-                "compilation_score": float(best_info.compilation_score),
-                "loss": float(loss_val),
-                "module_name": module_name,
-                "files_processed": int(_state["files_processed"]),
-                "train_step": int(_state["step"]),
-            }
-        )
+        wandb_payload = {
+            "train/step": int(_state["step"]),
+            "train/loss": float(loss_val),
+            "reward/mean": mean_reward,
+            "reward/max": max_reward,
+            "compile_success": int(best_success),
+            "unsafe_count": best_unsafe,
+            "warning_count": int(best_info.warning_count),
+            "error_count": int(best_info.error_count),
+            "compilation_score": float(best_info.compilation_score),
+            "module_name": module_name,
+            "files_processed": int(_state["files_processed"]),
+        }
+
+        if hasattr(wandb, "Html"):
+            escaped_rust = html.escape(rust)
+            wandb_payload["samples/best_rust_code"] = wandb.Html(
+                f"<h3>Module: {module_name}</h3><pre><code class='language-rust'>{escaped_rust}</code></pre>"
+            )
+
+        wandb.log(wandb_payload)
 
     os.makedirs(output_path, exist_ok=True)
     out_path = os.path.join(output_path, rust_filename)
@@ -396,3 +423,76 @@ def convert_c_to_rust(file_path: str, output_path: str) -> str:
 
     log(f"Saved → {out_path}")
     return rust_filename
+
+
+# ---------------------------------------------------------------------------
+# SUBMISSION REPORT GENERATOR
+# ---------------------------------------------------------------------------
+
+def generate_submission_report(output_dir: str):
+    """Generate PNG graphs and a Markdown summary for hackathon submissions."""
+    history = _state.get("history", [])
+    if not history:
+        log("No history to plot. Skipping report generation.")
+        return
+
+    os.makedirs(output_dir, exist_ok=True)
+    df = pd.DataFrame(history)
+
+    if "step" not in df.columns or df["step"].nunique() <= 1:
+        df["step"] = list(range(1, len(df) + 1))
+
+    fig, axes = plt.subplots(3, 1, figsize=(10, 15))
+    fig.suptitle("C2Rust RL Training Metrics (Qwen2.5-7B GRPO)", fontsize=16)
+
+    axes[0].plot(df["step"], df["loss"], color="red", marker="o", label="GRPO Loss")
+    axes[0].set_title("Policy Loss over Time")
+    axes[0].set_ylabel("Loss")
+    axes[0].grid(True, linestyle="--", alpha=0.6)
+    axes[0].legend()
+
+    axes[1].plot(df["step"], df["max_reward"], color="blue", marker="o", label="Max Reward")
+    axes[1].plot(df["step"], df["mean_reward"], color="lightblue", marker="x", label="Mean Reward")
+    axes[1].axhline(1.0, color="green", linestyle="--", label="Perfect Score (1.0)")
+    axes[1].set_title("Compiler Reward Evolution")
+    axes[1].set_ylabel("Reward")
+    axes[1].grid(True, linestyle="--", alpha=0.6)
+    axes[1].legend()
+
+    axes[2].bar(df["step"], df["unsafe_count"], color="orange", label="Unsafe Blocks")
+    axes[2].set_title("Reduction in Unsafe Code")
+    axes[2].set_xlabel("Training Step (Module)")
+    axes[2].set_ylabel("Unsafe Keyword Count")
+    axes[2].grid(True, linestyle="--", alpha=0.6)
+    axes[2].legend()
+
+    plt.tight_layout()
+    graph_path = os.path.join(output_dir, "training_curves.png")
+    plt.savefig(graph_path)
+    plt.close(fig)
+    log(f"Submission graphs saved to {graph_path}")
+
+    history_path = os.path.join(output_dir, "training_history.json")
+    with open(history_path, "w", encoding="utf-8") as f:
+        json.dump(history, f, indent=2)
+    log(f"Raw training history saved to {history_path}")
+
+    md_path = os.path.join(output_dir, "hackathon_report.md")
+    final_mean_reward = float(df["mean_reward"].iloc[-1]) if not df.empty else 0.0
+    success_count = int(df["compile_success"].sum()) if "compile_success" in df.columns else 0
+
+    try:
+        raw_table = df.to_markdown(index=False)
+    except Exception:
+        raw_table = df.to_string(index=False)
+
+    with open(md_path, "w", encoding="utf-8") as f:
+        f.write("# C2Rust RL Training Summary\n\n")
+        f.write(f"**Total Modules Processed:** {len(df)}\n")
+        f.write(f"**Final Mean Reward:** {final_mean_reward:.3f}\n")
+        f.write(f"**Total Successful Compiles:** {success_count} / {len(df)}\n\n")
+        f.write("![Training Curves](training_curves.png)\n\n")
+        f.write("### Raw Data Log\n")
+        f.write(raw_table)
+
+    log(f"Markdown report saved to {md_path}")
