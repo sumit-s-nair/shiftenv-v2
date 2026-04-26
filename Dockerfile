@@ -28,8 +28,6 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir \
         "torch==2.5.1" \
-        "torchvision" \
-        "torchaudio" \
         --index-url https://download.pytorch.org/whl/cu121
 
 # 4. Remaining Python dependencies
