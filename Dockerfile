@@ -1,37 +1,29 @@
-FROM ubuntu:22.04
+FROM python:3.11-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
-ENV PYTHONUNBUFFERED=1
 
-# 1. System tools: libclang (for analyzer.py), build tools, Python 3.11
+# 1. Install System Dependencies, Clang (for AST parsing), and Rust (for rewards)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        software-properties-common curl ca-certificates \
-        gcc make build-essential libssl-dev libclang-dev git \
-        python3.11 python3.11-dev python3-pip \
-    && rm -rf /var/lib/apt/lists/* \
-    && ln -sf python3.11 /usr/bin/python3 \
-    && ln -sf python3.11 /usr/bin/python \
-    && python --version
+        curl build-essential libclang-dev \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+        | sh -s -- -y --default-toolchain stable --profile minimal \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# 2. Rust compiler (stable) — required for reward.py's cargo check calls
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-        | sh -s -- -y --default-toolchain stable --profile minimal
 ENV PATH="/root/.cargo/bin:${PATH}"
+RUN rustup component add clippy
 
 WORKDIR /app
 
-# 3. Python dependencies for the env server (no torch/GPU needed for reward oracle)
+# 2. Install lightweight environment dependencies
+# Make sure fastapi, uvicorn, pydantic, and libclang are in this file!
 COPY requirements-env.txt .
 RUN pip install --no-cache-dir -r requirements-env.txt
 
-# 4. Copy codebase
+# 3. Copy the codebase
 COPY . .
 
-# 5. Create non-root user for HF Spaces
-RUN useradd -m -u 1000 user
-USER user
-
+# 4. Expose the Hugging Face health check port
 EXPOSE 7860
 
-# Boot: run the OpenEnv FastAPI server (reward oracle, no GPU needed)
+# 5. Boot the FastAPI Environment Server
 CMD ["uvicorn", "env.server.app:app", "--host", "0.0.0.0", "--port", "7860"]

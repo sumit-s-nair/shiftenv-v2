@@ -1,5 +1,5 @@
 ---
-title: C2Rust RL — Online Repository Migration
+title: C2Rust OpenEnv Server
 emoji: 🦀
 colorFrom: blue
 colorTo: green

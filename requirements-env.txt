@@ -14,3 +14,5 @@ uvicorn[standard]>=0.29.0
 
 # Utilities
 python-dotenv>=1.0.0
+pydantic
+libclang
