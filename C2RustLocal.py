@@ -11,6 +11,11 @@ from peft import LoraConfig, PeftModel, get_peft_model, prepare_model_for_kbit_t
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from trl import GRPOConfig, GRPOTrainer
 
+try:
+    import wandb
+except Exception:
+    wandb = None
+
 from C2RustAI import clean_rust_output, remove_self_import, strip_self_includes
 from reward import compute_reward
 
@@ -61,9 +66,11 @@ _state = {
     "group_size": GRPO_GROUP_SIZE,
     "online_training": False,
     "debug": False,
+    "use_wandb": False,
     "debug_log": "debug_log.md",
     "lr": 2e-5,
     "step": 0,
+    "files_processed": 0,
     "tokenizer": None,
     "model": None,
     "optimizer": None,
@@ -79,23 +86,47 @@ def configure(online_training=True, debug=False,
               adapter_path=DEFAULT_ADAPTER_DIR,
               debug_log="debug_log.md",
               group_size=GRPO_GROUP_SIZE,
-              lr=5e-6):
+              lr=5e-6,
+              use_wandb=False):
 
     log(f"Configuring system | online={online_training}, debug={debug}")
 
     _state.update(
         online_training=online_training,
         debug=debug,
+        use_wandb=bool(use_wandb and online_training),
         model_name=model_name,
         adapter_path=adapter_path,
         debug_log=debug_log,
         group_size=group_size,
         lr=lr,
         step=0,
+        files_processed=0,
         tokenizer=None,
         model=None,
         optimizer=None,
     )
+
+    if _state["use_wandb"]:
+        if wandb is None:
+            raise RuntimeError(
+                "WandB logging requested, but the 'wandb' package is not installed. "
+                "Install it with: pip install wandb"
+            )
+
+        wandb_mode = "online" if os.getenv("WANDB_API_KEY") else "offline"
+        if wandb.run is None:
+            log(f"Initializing Weights & Biases (mode={wandb_mode})...")
+            wandb.init(
+                project="c2rust-rl",
+                mode=wandb_mode,
+                config={
+                    "model": _state["model_name"],
+                    "learning_rate": _state["lr"],
+                    "group_size": _state["group_size"],
+                    "online_training": _state["online_training"],
+                },
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -309,10 +340,12 @@ def convert_c_to_rust(file_path: str, output_path: str) -> str:
         tokenizer, model, prompt, _state["group_size"]
     )
 
-    rewards = [
-        compute_reward(clean_rust_output(t), module_name)[0]
+    reward_pairs = [
+        compute_reward(clean_rust_output(t), module_name)
         for t in texts
     ]
+    rewards = [score for score, _ in reward_pairs]
+    reward_infos = [info for _, info in reward_pairs]
 
     log("Rewards:")
     for i, r in enumerate(rewards):
@@ -323,15 +356,38 @@ def convert_c_to_rust(file_path: str, output_path: str) -> str:
 
     rust = clean_rust_output(texts[best])
     rust = remove_self_import(rust, module_name)
+    best_info = reward_infos[best]
+    best_success = int(best_info.error_count == 0 and best_info.compilation_score >= 1.0)
+    loss_val = 0.0
 
-    if _state["online_training"]:
+    if _state["online_training"] and not _state["debug"]:
         _state["step"] += 1
-        loss = _grpo_step(model, optimizer, inputs, resp_ids, rewards)
-        log(f"GRPO step {_state['step']} complete | loss={loss:.4f}")
+        loss_val = _grpo_step(model, optimizer, inputs, resp_ids, rewards)
+        log(f"GRPO step {_state['step']} complete | loss={loss_val:.4f}")
 
         if _state["step"] % _SAVE_EVERY == 0 and hasattr(model, "save_pretrained"):
             model.save_pretrained(_state["adapter_path"])
             log(f"Adapters saved → {_state['adapter_path']}")
+    elif _state["online_training"] and _state["debug"]:
+        log("Debug mode is enabled; skipping GRPO parameter update.")
+
+    _state["files_processed"] += 1
+    if _state["use_wandb"] and wandb is not None and wandb.run is not None:
+        wandb.log(
+            {
+                "reward": float(rewards[best]),
+                "reward_mean": float(sum(rewards) / len(rewards)),
+                "compile_success": best_success,
+                "unsafe_count": int(best_info.unsafe_count),
+                "warning_count": int(best_info.warning_count),
+                "error_count": int(best_info.error_count),
+                "compilation_score": float(best_info.compilation_score),
+                "loss": float(loss_val),
+                "module_name": module_name,
+                "files_processed": int(_state["files_processed"]),
+                "train_step": int(_state["step"]),
+            }
+        )
 
     os.makedirs(output_path, exist_ok=True)
     out_path = os.path.join(output_path, rust_filename)

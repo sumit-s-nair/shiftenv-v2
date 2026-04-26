@@ -31,6 +31,10 @@ def _parse_args() -> argparse.Namespace:
         "--debug-log", default="debug_log.md", dest="debug_log",
         help="Path for the debug markdown log (default: debug_log.md)",
     )
+    parser.add_argument(
+        "--wandb", action="store_true",
+        help="Enable Weights & Biases logging (only applies to local engine)",
+    )
     return parser.parse_args()
 
 
@@ -78,6 +82,7 @@ def main() -> None:
             online_training=True,
             debug=args.debug,
             debug_log=args.debug_log,
+            use_wandb=args.wandb,
         )
         convert_c_to_rust = C2RustLocal.convert_c_to_rust
 
