@@ -79,7 +79,7 @@ INPUT C CODE:
 """
 
     response = client.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-4.1-nano",
         messages=[
             {"role": "system", "content": "Return only raw Rust code. No explanations, no markdown."},
             {"role": "user",   "content": prompt},

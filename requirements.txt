@@ -13,7 +13,7 @@ python-dotenv>=1.0.0
 libclang>=16.0.0
 
 # --- Local model engine (C2RustLocal.py) ---
-torch>=2.0.0
+torch>=2.5.1
 transformers>=4.40.0
 accelerate>=0.28.0      # required by transformers for device_map="auto"
 peft>=0.10.0            # LoRA adapters

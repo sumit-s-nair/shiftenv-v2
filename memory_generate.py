@@ -10,10 +10,11 @@ def _normalize_import(name):
     return base
 
 
-def initialize_migration_state(deps_path, state_path="migration_state.json"):
+def initialize_migration_state(deps_path, state_path="migration_state.json", top_level_folder=None):
     """
     Reads dependencies.json and creates migration_state.json.
     Skips self-imports (e.g., foo.h inside module foo).
+    If top_level_folder is specified, only includes modules from that top-level folder.
     """
     if os.path.exists(state_path):
         print(f"State file already exists at {state_path}. Skipping.")
@@ -41,6 +42,12 @@ def initialize_migration_state(deps_path, state_path="migration_state.json"):
     }
 
     for folder, module_entries in deps.get("modules", {}).items():
+        # Filter by top-level folder if specified
+        if top_level_folder is not None:
+            folder_prefix = folder.split('\\')[0] if '\\' in folder else folder
+            if folder_prefix != top_level_folder:
+                continue
+                
         state["modules"][folder] = {}
 
         for module_name, data in module_entries.items():

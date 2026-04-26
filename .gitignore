@@ -1,3 +1,25 @@
 /.env
 /.venv
 /__pycache__
+
+# Migration outputs (temporary files cleaned between epochs)
+/rust_output/
+/migrator_data/
+/migration_state.json
+/training_history.json
+
+/debug_log.md
+
+
+# Model files
+/lora_adapters/
+*.safetensors
+
+# Checkpoints
+/checkpoints/
+
+# OS files
+.DS_Store
+*.swp
+*.swo
+*~
