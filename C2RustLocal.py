@@ -50,13 +50,15 @@ bnb_config = BitsAndBytesConfig(
 # Qwen2.5-Coder-7B-Instruct: ~4 GB at 4-bit, fits T4 (16 GB) with room for
 # activations, KV cache, and LoRA gradients during online GRPO training.
 DEFAULT_MODEL       = "Qwen/Qwen2.5-Coder-7B-Instruct"
-DEFAULT_ADAPTER_DIR = "lora_adapters"
+# Allow HF Spaces to override via env so adapters land on the /data volume
+DEFAULT_ADAPTER_DIR = os.environ.get("ADAPTER_DIR", "lora_adapters")
 MAX_NEW_TOKENS      = 1024
 GRPO_GROUP_SIZE     = 4
 LORA_R              = 16
 LORA_ALPHA          = 32
-_SAVE_EVERY         = 10
+_SAVE_EVERY         = 5        # save adapter + checkpoint every N steps
 _ADV_EPS            = 1e-8
+_CHECKPOINT_FILE    = "training_checkpoint.json"  # sidecar saved next to adapter dir
 
 
 # ---------------------------------------------------------------------------
@@ -184,12 +186,68 @@ def _extract_include_modules(c_code: str, module_name: str) -> list[str]:
 # MODEL LOADING
 # ---------------------------------------------------------------------------
 
+def _checkpoint_path() -> str:
+    """Return path to the JSON sidecar that stores step/history for resumption."""
+    return os.path.join(_state["adapter_path"], _CHECKPOINT_FILE)
+
+
+def _save_checkpoint(model, tokenizer):
+    """Persist LoRA adapters, tokenizer, and training state to disk."""
+    adapter_dir = _state["adapter_path"]
+    os.makedirs(adapter_dir, exist_ok=True)
+
+    # Save LoRA weights
+    if hasattr(model, "save_pretrained"):
+        model.save_pretrained(adapter_dir)
+
+    # Save tokenizer so the adapter dir is self-contained
+    if hasattr(tokenizer, "save_pretrained"):
+        tokenizer.save_pretrained(adapter_dir)
+
+    # Save resumable training state
+    ckpt = {
+        "step": _state["step"],
+        "files_processed": _state["files_processed"],
+        "history": _state["history"],
+    }
+    with open(_checkpoint_path(), "w", encoding="utf-8") as f:
+        json.dump(ckpt, f, indent=2)
+
+    log(f"Checkpoint saved → {adapter_dir} (step={_state['step']})")
+
+
+def _load_checkpoint():
+    """Restore step/history from a previous checkpoint if one exists."""
+    ckpt_file = _checkpoint_path()
+    if not os.path.exists(ckpt_file):
+        return
+    try:
+        with open(ckpt_file, encoding="utf-8") as f:
+            ckpt = json.load(f)
+        _state["step"] = int(ckpt.get("step", 0))
+        _state["files_processed"] = int(ckpt.get("files_processed", 0))
+        _state["history"] = list(ckpt.get("history", []))
+        log(f"Resumed from checkpoint: step={_state['step']}, "
+            f"files_processed={_state['files_processed']}")
+    except Exception as e:
+        log(f"WARNING: Could not load checkpoint ({e}); starting fresh.")
+
+
 def _ensure_model():
     if _state["model"] is not None:
         return _state["tokenizer"], _state["model"], _state["optimizer"]
 
     log(f"Loading tokenizer: {_state['model_name']}")
-    tokenizer = AutoTokenizer.from_pretrained(_state["model_name"])
+
+    adapter_dir = _state["adapter_path"]
+    saved_adapter_exists = (
+        os.path.isdir(adapter_dir)
+        and os.path.exists(os.path.join(adapter_dir, "adapter_config.json"))
+    )
+
+    # Prefer loading the tokenizer from a saved adapter dir if available
+    tok_source = adapter_dir if saved_adapter_exists else _state["model_name"]
+    tokenizer = AutoTokenizer.from_pretrained(tok_source)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
@@ -208,16 +266,24 @@ def _ensure_model():
         # Required before attaching LoRA to a quantized model: casts layer norms
         # to float32 and enables gradient checkpointing to save VRAM.
         base = prepare_model_for_kbit_training(base, use_gradient_checkpointing=True)
-        log("Attaching LoRA adapters...")
-        lora_cfg = LoraConfig(
-            r=LORA_R,
-            lora_alpha=LORA_ALPHA,
-            target_modules=["q_proj", "v_proj", "k_proj", "o_proj"],
-            lora_dropout=0.05,
-            bias="none",
-            task_type="CAUSAL_LM",
-        )
-        model = get_peft_model(base, lora_cfg)
+
+        if saved_adapter_exists:
+            log(f"Loading existing LoRA adapters from {adapter_dir} ...")
+            model = PeftModel.from_pretrained(base, adapter_dir, is_trainable=True)
+            # Restore step / history counters
+            _load_checkpoint()
+        else:
+            log("Attaching fresh LoRA adapters...")
+            lora_cfg = LoraConfig(
+                r=LORA_R,
+                lora_alpha=LORA_ALPHA,
+                target_modules=["q_proj", "v_proj", "k_proj", "o_proj"],
+                lora_dropout=0.05,
+                bias="none",
+                task_type="CAUSAL_LM",
+            )
+            model = get_peft_model(base, lora_cfg)
+
         model.print_trainable_parameters()
     else:
         model = base
@@ -371,9 +437,8 @@ def convert_c_to_rust(file_path: str, output_path: str) -> str:
         loss_val = _grpo_step(model, optimizer, inputs, resp_ids, rewards)
         log(f"GRPO step {_state['step']} complete | loss={loss_val:.4f}")
 
-        if _state["step"] % _SAVE_EVERY == 0 and hasattr(model, "save_pretrained"):
-            model.save_pretrained(_state["adapter_path"])
-            log(f"Adapters saved → {_state['adapter_path']}")
+        if _state["step"] % _SAVE_EVERY == 0:
+            _save_checkpoint(model, tokenizer)
     elif _state["online_training"] and _state["debug"]:
         log("Debug mode is enabled; skipping GRPO parameter update.")
 
