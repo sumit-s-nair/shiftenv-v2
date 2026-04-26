@@ -223,6 +223,28 @@ def _save_checkpoint(model, tokenizer):
 
     log(f"Checkpoint saved → {adapter_dir} (step={_state['step']})")
 
+def save_epoch_checkpoint(epoch_num: int):
+    """Called by main.py at the end of each epoch to explicitly checkpoint and upload to Hub."""
+    model = _state.get("model")
+    tokenizer = _state.get("tokenizer")
+    if model is None:
+        return
+
+    log(f"--- Saving Epoch {epoch_num} Checkpoint ---")
+    _save_checkpoint(model, tokenizer)
+
+    hf_repo = "sumit-s-nair/c2rust-qwen-adapter"
+    hf_token = os.environ.get("HF_TOKEN")
+    if hf_token and hasattr(model, "push_to_hub"):
+        try:
+            log(f"Pushing Epoch {epoch_num} checkpoint to Hugging Face Hub → {hf_repo} ...")
+            model.push_to_hub(hf_repo, token=hf_token, safe_serialization=True, commit_message=f"Upload Epoch {epoch_num} checkpoint")
+            if tokenizer and hasattr(tokenizer, "push_to_hub"):
+                tokenizer.push_to_hub(hf_repo, token=hf_token, commit_message=f"Upload Epoch {epoch_num} tokenizer")
+            log("Hub auto-push complete.")
+        except Exception as e:
+            log(f"WARNING: Failed to auto-push epoch checkpoint to hub: {e}")
+
     # Auto-push to Hugging Face Hub periodically if token is available
     hf_repo = "sumit-s-nair/c2rust-qwen-adapter"
     hf_token = os.environ.get("HF_TOKEN")
