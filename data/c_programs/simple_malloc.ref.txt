@@ -1,2 +1,0 @@
-ID: 1, Name: Alice, Score: 95.5
-ID: 2, Name: Bob, Score: 87.0

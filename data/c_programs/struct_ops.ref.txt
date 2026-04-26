@@ -1,3 +1,0 @@
-Area: 78.54
-(3,4) inside: yes
-(4,4) inside: no

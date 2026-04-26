@@ -1,3 +1,0 @@
-Length: 18
-Words: 4
-Upper: HELLO WORLD FROM C
