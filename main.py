@@ -6,6 +6,7 @@ import subprocess
 import sys
 from time import sleep
 
+import health_check  
 from choose_module import pick_next_module
 from gen_cargo import generate_cargo
 from mark_migrated import mark_node_migrated

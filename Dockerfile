@@ -31,6 +31,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 4. Copy your codebase
 COPY . .
 
+EXPOSE 7860
+
 # Force Python logs to stream live to the Hugging Face UI
 ENV PYTHONUNBUFFERED=1
 
