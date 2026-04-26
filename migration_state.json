@@ -1,0 +1,50 @@
+{
+  "modules": {
+    "file_io": {
+      "status": "pending",
+      "retry_count": 0,
+      "last_error_type": null,
+      "best_reward": null,
+      "rust_code": null
+    },
+    "linked_list": {
+      "status": "pending",
+      "retry_count": 0,
+      "last_error_type": null,
+      "best_reward": null,
+      "rust_code": null
+    },
+    "pointer_arith": {
+      "status": "pending",
+      "retry_count": 0,
+      "last_error_type": null,
+      "best_reward": null,
+      "rust_code": null
+    },
+    "simple_malloc": {
+      "status": "pending",
+      "retry_count": 0,
+      "last_error_type": null,
+      "best_reward": null,
+      "rust_code": null
+    },
+    "string_ops": {
+      "status": "in_progress",
+      "retry_count": 1,
+      "last_error_type": "compile_error",
+      "best_reward": -1.0,
+      "rust_code": null
+    },
+    "struct_ops": {
+      "status": "pending",
+      "retry_count": 0,
+      "last_error_type": null,
+      "best_reward": null,
+      "rust_code": null
+    }
+  },
+  "global": {
+    "total": 6,
+    "migrated": 0
+  }
+}

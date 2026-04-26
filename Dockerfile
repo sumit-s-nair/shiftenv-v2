@@ -16,14 +16,7 @@ WORKDIR /app
 
 # Python deps (copy first for layer caching)
 COPY requirements.txt .
-RUN pip install --no-cache-dir \
-    openai \
-    gradio \
-    pyyaml \
-    tree-sitter \
-    tree-sitter-c \
-    datasets \
-    wandb
+RUN pip install -r requirements.txt --no-cache-dir
 
 # Application code
 COPY . .
@@ -33,4 +26,4 @@ ENV GRADIO_SERVER_NAME="0.0.0.0"
 ENV GRADIO_SERVER_PORT="7860"
 EXPOSE 7860
 
-CMD ["python", "app.py"]
+CMD ["python", "-u", "train.py", "--config", "configs/config.yaml"]

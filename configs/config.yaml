@@ -1,5 +1,5 @@
 model:
-  name: "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct"
+  name: "Qwen/Qwen2.5-Coder-7B-Instruct"          # Qwen2.5-0.5B is a smaller variant of Qwen2.5, ideal for fine-tuning on budget
   quantization: "4bit"           # QLoRA via Unsloth
   max_tokens: 2048
   temperature: 0.2
